@@ -10,6 +10,7 @@ const vertexShader = `
   varying vec2 vUv;
   varying vec3 vNormal;
   varying vec3 vPosition;
+  varying float vDisplacement;
   uniform float uTime;
   uniform float uHover;
 
@@ -68,9 +69,18 @@ const vertexShader = `
     vUv = uv;
     vNormal = normal;
     vec3 pos = position;
-    float noise = snoise(pos * 1.5 + uTime * 0.3) * 0.15;
-    noise += snoise(pos * 3.0 + uTime * 0.5) * 0.08;
-    pos += normal * noise * (1.0 + uHover * 0.5);
+    
+    // Multi-layered noise for more dramatic displacement
+    float noise1 = snoise(pos * 2.0 + uTime * 0.4) * 0.25;
+    float noise2 = snoise(pos * 4.0 + uTime * 0.6) * 0.15;
+    float noise3 = snoise(pos * 8.0 + uTime * 0.8) * 0.08;
+    
+    float totalNoise = noise1 + noise2 + noise3;
+    totalNoise *= (1.0 + uHover * 0.8);
+    
+    pos += normal * totalNoise;
+    
+    vDisplacement = totalNoise;
     vPosition = pos;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
   }
@@ -80,6 +90,7 @@ const fragmentShader = `
   varying vec2 vUv;
   varying vec3 vNormal;
   varying vec3 vPosition;
+  varying float vDisplacement;
   uniform float uTime;
   uniform float uHover;
   uniform vec2 uMouse;
@@ -89,6 +100,7 @@ const fragmentShader = `
     vec3 color2 = vec3(0.13, 0.83, 0.93); // cyan
     vec3 color3 = vec3(0.98, 0.45, 0.09); // orange
     vec3 color4 = vec3(0.95, 0.25, 0.55); // pink
+    vec3 color5 = vec3(0.1, 0.95, 0.5); // green
     
     // Complex pattern with multiple frequencies
     float pattern1 = sin(vUv.x * 30.0 + uTime * 2.0) * cos(vUv.y * 30.0 + uTime * 1.5);
@@ -98,29 +110,37 @@ const fragmentShader = `
     float combinedPattern = (pattern1 + pattern2 + pattern3) / 3.0;
     combinedPattern = smoothstep(0.2, 0.8, combinedPattern * 0.5 + 0.5);
     
-    // Dynamic color mixing based on position and time
-    float colorMix1 = sin(uTime * 0.5 + vUv.x * 3.0) * 0.5 + 0.5;
-    float colorMix2 = cos(uTime * 0.3 + vUv.y * 2.0) * 0.5 + 0.5;
+    // Dynamic color mixing based on position, time AND displacement
+    float colorMix1 = sin(uTime * 0.5 + vUv.x * 3.0 + vDisplacement * 5.0) * 0.5 + 0.5;
+    float colorMix2 = cos(uTime * 0.3 + vUv.y * 2.0 + vDisplacement * 3.0) * 0.5 + 0.5;
+    float colorMix3 = sin(vDisplacement * 10.0 + uTime) * 0.5 + 0.5;
     
     vec3 baseColor = mix(color1, color2, colorMix1);
     baseColor = mix(baseColor, color3, combinedPattern * 0.6);
-    baseColor = mix(baseColor, color4, colorMix2 * 0.3);
+    baseColor = mix(baseColor, color4, colorMix2 * 0.4);
+    baseColor = mix(baseColor, color5, colorMix3 * 0.2);
     
     // Enhanced fresnel with chromatic aberration effect
     float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 3.0);
     vec3 fresnelColor = mix(vec3(0.5, 0.3, 1.0), vec3(0.2, 0.9, 1.0), fresnel);
+    fresnelColor = mix(fresnelColor, vec3(1.0, 0.5, 0.2), vDisplacement * 2.0);
     
     // Pulsing glow effect
     float pulse = sin(uTime * 2.0) * 0.3 + 0.7;
-    float glow = fresnel * (1.2 + uHover * 0.8) * pulse;
+    float glow = fresnel * (1.5 + uHover * 1.0) * pulse;
     
     // Final composition with more vibrancy
-    vec3 finalColor = baseColor * 0.5 + fresnelColor * glow;
-    finalColor += vec3(0.15, 0.08, 0.25) * fresnel;
+    vec3 finalColor = baseColor * 0.6 + fresnelColor * glow;
+    finalColor += vec3(0.2, 0.1, 0.3) * fresnel;
     
-    // Add some sparkle
-    float sparkle = pow(combinedPattern, 8.0) * 0.5;
+    // Add sparkle based on displacement
+    float sparkle = pow(combinedPattern, 8.0) * 0.6;
+    sparkle += pow(abs(vDisplacement), 3.0) * 0.8;
     finalColor += sparkle;
+    
+    // Add rim lighting
+    float rim = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 4.0);
+    finalColor += rim * vec3(0.8, 0.4, 1.0) * 0.5;
     
     gl_FragColor = vec4(finalColor, 0.98);
   }
@@ -310,23 +330,43 @@ function Scene3D() {
   return (
     <div className="absolute inset-0 w-full h-full" onMouseMove={handleMouseMove}>
       <Canvas camera={{ position: [0, 0, 5], fov: 45 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
-        <ambientLight intensity={0.4} />
-        <pointLight position={[5, 5, 5]} intensity={1.2} color="#a78bfa" distance={10} />
-        <pointLight position={[-5, -5, 5]} intensity={0.8} color="#22d3ee" distance={10} />
-        <pointLight position={[0, 5, -5]} intensity={0.6} color="#f97316" distance={8} />
-        <spotLight position={[0, 10, 0]} intensity={0.5} color="#ffffff" angle={0.3} penumbra={1} />
+        <ambientLight intensity={0.5} />
+        <pointLight position={[5, 5, 5]} intensity={1.5} color="#a78bfa" distance={10} />
+        <pointLight position={[-5, -5, 5]} intensity={1} color="#22d3ee" distance={10} />
+        <pointLight position={[0, 5, -5]} intensity={0.8} color="#f97316" distance={8} />
+        <pointLight position={[0, -5, 5]} intensity={0.6} color="#ec4899" distance={8} />
+        <spotLight position={[0, 10, 0]} intensity={0.7} color="#ffffff" angle={0.3} penumbra={1} />
         
         <AnimatedSphere mouse={mouse} />
         
-        {/* Multiple orbital rings with different speeds */}
-        <OrbitalRing radius={2.3} speed={0.3} color="#a78bfa" opacity={0.4} />
-        <OrbitalRing radius={2.7} speed={-0.2} color="#22d3ee" opacity={0.3} />
-        <OrbitalRing radius={3.1} speed={0.15} color="#f97316" opacity={0.25} />
-        <OrbitalRing radius={3.5} speed={-0.1} color="#ec4899" opacity={0.2} />
+        {/* Multiple orbital rings with different speeds and sizes */}
+        <OrbitalRing radius={2.3} speed={0.3} color="#a78bfa" opacity={0.5} />
+        <OrbitalRing radius={2.7} speed={-0.25} color="#22d3ee" opacity={0.4} />
+        <OrbitalRing radius={3.1} speed={0.2} color="#f97316" opacity={0.35} />
+        <OrbitalRing radius={3.5} speed={-0.15} color="#ec4899" opacity={0.3} />
+        <OrbitalRing radius={3.9} speed={0.1} color="#10b981" opacity={0.25} />
         
         <FloatingParticles />
         <FloatingShapes />
         <EnergyBeam />
+        
+        {/* Additional floating orbs */}
+        {Array.from({ length: 5 }).map((_, i) => (
+          <mesh key={`orb-${i}`} position={[
+            Math.cos(i * 1.2) * 4,
+            Math.sin(i * 1.5) * 2,
+            Math.cos(i * 0.8) * 3
+          ]}>
+            <sphereGeometry args={[0.15, 32, 32]} />
+            <meshStandardMaterial 
+              color={['#a78bfa', '#22d3ee', '#f97316', '#ec4899', '#10b981'][i]}
+              emissive={['#a78bfa', '#22d3ee', '#f97316', '#ec4899', '#10b981'][i]}
+              emissiveIntensity={0.8}
+              metalness={0.9}
+              roughness={0.1}
+            />
+          </mesh>
+        ))}
         
         <Environment preset="night" />
         <fog attach="fog" args={['#050507', 5, 15]} />
