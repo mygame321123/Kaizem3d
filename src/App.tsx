@@ -85,22 +85,44 @@ const fragmentShader = `
   uniform vec2 uMouse;
 
   void main() {
-    vec3 color1 = vec3(0.65, 0.55, 0.98);
-    vec3 color2 = vec3(0.13, 0.83, 0.93);
-    vec3 color3 = vec3(0.98, 0.45, 0.09);
+    vec3 color1 = vec3(0.65, 0.55, 0.98); // violet
+    vec3 color2 = vec3(0.13, 0.83, 0.93); // cyan
+    vec3 color3 = vec3(0.98, 0.45, 0.09); // orange
+    vec3 color4 = vec3(0.95, 0.25, 0.55); // pink
     
-    float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.5);
-    float pattern = sin(vUv.x * 20.0 + uTime) * sin(vUv.y * 20.0 + uTime * 0.5);
-    pattern = smoothstep(0.3, 0.7, pattern * 0.5 + 0.5);
+    // Complex pattern with multiple frequencies
+    float pattern1 = sin(vUv.x * 30.0 + uTime * 2.0) * cos(vUv.y * 30.0 + uTime * 1.5);
+    float pattern2 = sin(vUv.x * 15.0 - uTime * 1.2) * sin(vUv.y * 15.0 + uTime * 0.8);
+    float pattern3 = cos(length(vUv - 0.5) * 20.0 - uTime * 3.0);
     
-    vec3 baseColor = mix(color1, color2, vUv.y + sin(uTime * 0.3) * 0.2);
-    baseColor = mix(baseColor, color3, pattern * 0.3);
+    float combinedPattern = (pattern1 + pattern2 + pattern3) / 3.0;
+    combinedPattern = smoothstep(0.2, 0.8, combinedPattern * 0.5 + 0.5);
     
-    float glow = fresnel * (0.8 + uHover * 0.5);
-    vec3 finalColor = baseColor * 0.4 + vec3(glow) * vec3(0.8, 0.7, 1.0);
-    finalColor += vec3(0.1, 0.05, 0.2) * fresnel;
+    // Dynamic color mixing based on position and time
+    float colorMix1 = sin(uTime * 0.5 + vUv.x * 3.0) * 0.5 + 0.5;
+    float colorMix2 = cos(uTime * 0.3 + vUv.y * 2.0) * 0.5 + 0.5;
     
-    gl_FragColor = vec4(finalColor, 0.95);
+    vec3 baseColor = mix(color1, color2, colorMix1);
+    baseColor = mix(baseColor, color3, combinedPattern * 0.6);
+    baseColor = mix(baseColor, color4, colorMix2 * 0.3);
+    
+    // Enhanced fresnel with chromatic aberration effect
+    float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 3.0);
+    vec3 fresnelColor = mix(vec3(0.5, 0.3, 1.0), vec3(0.2, 0.9, 1.0), fresnel);
+    
+    // Pulsing glow effect
+    float pulse = sin(uTime * 2.0) * 0.3 + 0.7;
+    float glow = fresnel * (1.2 + uHover * 0.8) * pulse;
+    
+    // Final composition with more vibrancy
+    vec3 finalColor = baseColor * 0.5 + fresnelColor * glow;
+    finalColor += vec3(0.15, 0.08, 0.25) * fresnel;
+    
+    // Add some sparkle
+    float sparkle = pow(combinedPattern, 8.0) * 0.5;
+    finalColor += sparkle;
+    
+    gl_FragColor = vec4(finalColor, 0.98);
   }
 `;
 
@@ -145,44 +167,135 @@ function OrbitalRing({ radius, speed, color, opacity = 0.3 }: { radius: number; 
   useFrame((state) => {
     if (ref.current) {
       ref.current.rotation.z = state.clock.getElapsedTime() * speed;
-      ref.current.rotation.x = Math.PI / 2 + Math.sin(state.clock.getElapsedTime() * 0.2) * 0.1;
+      ref.current.rotation.x = Math.PI / 2 + Math.sin(state.clock.getElapsedTime() * 0.2) * 0.15;
+      ref.current.rotation.y = Math.cos(state.clock.getElapsedTime() * 0.15) * 0.1;
     }
   });
   return (
-    <mesh ref={ref}>
-      <torusGeometry args={[radius, 0.005, 16, 100]} />
-      <meshBasicMaterial color={color} transparent opacity={opacity} />
+    <group>
+      <mesh ref={ref}>
+        <torusGeometry args={[radius, 0.008, 16, 120]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} />
+      </mesh>
+      {/* Glow ring */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[radius, 0.03, 16, 100]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity * 0.2} />
+      </mesh>
+    </group>
+  );
+}
+
+// Energy beam effect
+function EnergyBeam() {
+  const ref = useRef<THREE.Mesh>(null);
+  
+  useFrame((state) => {
+    if (ref.current) {
+      const t = state.clock.getElapsedTime();
+      ref.current.rotation.z = t * 0.5;
+      ref.current.scale.x = 1 + Math.sin(t * 2) * 0.2;
+    }
+  });
+
+  return (
+    <mesh ref={ref} position={[0, 0, -2]}>
+      <planeGeometry args={[0.1, 8, 1, 50]} />
+      <meshBasicMaterial color="#a78bfa" transparent opacity={0.15} side={THREE.DoubleSide} />
     </mesh>
   );
 }
 
 function FloatingParticles() {
-  const count = 80;
+  const count = 150;
   const ref = useRef<THREE.Points>(null);
   const positions = useMemo(() => {
     const pos = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    
     for (let i = 0; i < count; i++) {
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = 2.5 + Math.random() * 1.5;
+      const r = 2.5 + Math.random() * 2;
       pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       pos[i * 3 + 2] = r * Math.cos(phi);
+      
+      // Multi-color particles
+      const colorChoice = Math.random();
+      if (colorChoice < 0.33) {
+        colors[i * 3] = 0.65; colors[i * 3 + 1] = 0.55; colors[i * 3 + 2] = 0.98; // violet
+      } else if (colorChoice < 0.66) {
+        colors[i * 3] = 0.13; colors[i * 3 + 1] = 0.83; colors[i * 3 + 2] = 0.93; // cyan
+      } else {
+        colors[i * 3] = 0.98; colors[i * 3 + 1] = 0.45; colors[i * 3 + 2] = 0.09; // orange
+      }
     }
-    return pos;
+    return { positions: pos, colors };
   }, []);
 
   useFrame((state) => {
-    if (ref.current) ref.current.rotation.y = state.clock.getElapsedTime() * 0.05;
+    if (ref.current) {
+      ref.current.rotation.y = state.clock.getElapsedTime() * 0.08;
+      ref.current.rotation.x = Math.sin(state.clock.getElapsedTime() * 0.1) * 0.1;
+    }
   });
 
   return (
     <points ref={ref}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-position" args={[positions.positions, 3]} />
+        <bufferAttribute attach="attributes-color" args={[positions.colors, 3]} />
       </bufferGeometry>
-      <pointsMaterial size={0.015} color="#a78bfa" transparent opacity={0.6} sizeAttenuation />
+      <pointsMaterial size={0.025} vertexColors transparent opacity={0.8} sizeAttenuation />
     </points>
+  );
+}
+
+// Floating geometric shapes
+function FloatingShapes() {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = t * 0.05;
+    }
+  });
+
+  const shapes = useMemo(() => {
+    return Array.from({ length: 12 }).map((_, i) => {
+      const angle = (i / 12) * Math.PI * 2;
+      const radius = 3 + Math.random();
+      return {
+        position: [
+          Math.cos(angle) * radius,
+          (Math.random() - 0.5) * 3,
+          Math.sin(angle) * radius,
+        ] as [number, number, number],
+        rotation: [Math.random() * Math.PI, Math.random() * Math.PI, 0] as [number, number, number],
+        scale: 0.1 + Math.random() * 0.15,
+        color: ['#a78bfa', '#22d3ee', '#f97316'][i % 3],
+      };
+    });
+  }, []);
+
+  return (
+    <group ref={groupRef}>
+      {shapes.map((shape, i) => (
+        <mesh key={i} position={shape.position} rotation={shape.rotation} scale={shape.scale}>
+          <octahedronGeometry args={[1, 0]} />
+          <meshStandardMaterial 
+            color={shape.color} 
+            metalness={0.9} 
+            roughness={0.1} 
+            emissive={shape.color}
+            emissiveIntensity={0.5}
+            wireframe={i % 2 === 0}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -197,14 +310,94 @@ function Scene3D() {
   return (
     <div className="absolute inset-0 w-full h-full" onMouseMove={handleMouseMove}>
       <Canvas camera={{ position: [0, 0, 5], fov: 45 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
-        <ambientLight intensity={0.3} />
-        <pointLight position={[5, 5, 5]} intensity={0.8} color="#a78bfa" />
-        <pointLight position={[-5, -5, 5]} intensity={0.5} color="#22d3ee" />
+        <ambientLight intensity={0.4} />
+        <pointLight position={[5, 5, 5]} intensity={1.2} color="#a78bfa" distance={10} />
+        <pointLight position={[-5, -5, 5]} intensity={0.8} color="#22d3ee" distance={10} />
+        <pointLight position={[0, 5, -5]} intensity={0.6} color="#f97316" distance={8} />
+        <spotLight position={[0, 10, 0]} intensity={0.5} color="#ffffff" angle={0.3} penumbra={1} />
+        
         <AnimatedSphere mouse={mouse} />
-        <OrbitalRing radius={2.3} speed={0.2} color="#a78bfa" opacity={0.2} />
-        <OrbitalRing radius={2.7} speed={-0.15} color="#22d3ee" opacity={0.15} />
-        <OrbitalRing radius={3.1} speed={0.1} color="#f97316" opacity={0.1} />
+        
+        {/* Multiple orbital rings with different speeds */}
+        <OrbitalRing radius={2.3} speed={0.3} color="#a78bfa" opacity={0.4} />
+        <OrbitalRing radius={2.7} speed={-0.2} color="#22d3ee" opacity={0.3} />
+        <OrbitalRing radius={3.1} speed={0.15} color="#f97316" opacity={0.25} />
+        <OrbitalRing radius={3.5} speed={-0.1} color="#ec4899" opacity={0.2} />
+        
         <FloatingParticles />
+        <FloatingShapes />
+        <EnergyBeam />
+        
+        <Environment preset="night" />
+        <fog attach="fog" args={['#050507', 5, 15]} />
+      </Canvas>
+    </div>
+  );
+}
+
+// ============ MANIFESTO 3D SCENE ============
+function ManifestoScene() {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = t * 0.1;
+      groupRef.current.rotation.x = Math.sin(t * 0.3) * 0.2;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Central glowing sphere */}
+      <mesh>
+        <sphereGeometry args={[1, 64, 64]} />
+        <meshStandardMaterial 
+          color="#a78bfa" 
+          metalness={1} 
+          roughness={0} 
+          emissive="#a78bfa"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      
+      {/* Orbiting rings */}
+      {[1.5, 2, 2.5].map((radius, i) => (
+        <mesh key={i} rotation={[Math.PI / 2 + i * 0.3, i * 0.5, 0]}>
+          <torusGeometry args={[radius, 0.015, 16, 100]} />
+          <meshBasicMaterial 
+            color={['#a78bfa', '#22d3ee', '#f97316'][i]} 
+            transparent 
+            opacity={0.6}
+          />
+        </mesh>
+      ))}
+      
+      {/* Floating particles around */}
+      {Array.from({ length: 30 }).map((_, i) => {
+        const angle = (i / 30) * Math.PI * 2;
+        const radius = 2.5 + Math.random() * 0.5;
+        const y = (Math.random() - 0.5) * 2;
+        return (
+          <mesh key={i} position={[Math.cos(angle) * radius, y, Math.sin(angle) * radius]}>
+            <sphereGeometry args={[0.03, 8, 8]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function ManifestoScene3D() {
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      <Canvas camera={{ position: [0, 0, 6], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.3} />
+        <pointLight position={[5, 5, 5]} intensity={1} color="#a78bfa" />
+        <pointLight position={[-5, -5, 5]} intensity={0.7} color="#22d3ee" />
+        <pointLight position={[0, 0, 5]} intensity={0.5} color="#f97316" />
+        <ManifestoScene />
         <Environment preset="night" />
       </Canvas>
     </div>
@@ -576,6 +769,15 @@ function Manifesto() {
     <section ref={ref} className="relative py-32 md:py-48 overflow-hidden">
       <div className="absolute inset-0 bg-[#050507]" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      
+      {/* 3D Scene Background */}
+      <div className="absolute inset-0 z-0 opacity-30">
+        <Suspense fallback={null}>
+          <ManifestoScene3D />
+        </Suspense>
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-b from-[#050507] via-transparent to-[#050507] z-[1] pointer-events-none" />
+      
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 md:px-10 text-center">
         <motion.div initial={{ opacity: 0, y: 40 }} animate={isInView ? { opacity: 1, y: 0 } : {}} transition={{ duration: 1 }}>
           <div className="mono text-[10px] tracking-[0.3em] text-white/30 mb-8">MANIFESTO</div>
@@ -607,6 +809,15 @@ function KaizemSistemas() {
     <section id="sistemas" ref={ref} className="relative py-32 md:py-48 overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-[#050507] via-[#08080d] to-[#050507]" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      
+      {/* 3D Scene Background */}
+      <div className="absolute top-0 right-0 w-1/2 h-full z-0 opacity-30">
+        <Suspense fallback={null}>
+          <SistemasScene3D />
+        </Suspense>
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-l from-[#050507] via-transparent to-transparent z-[1] pointer-events-none" />
+      
       <div className="relative z-10 max-w-[1600px] mx-auto px-6 md:px-10">
         <div className="mb-20">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={isInView ? { opacity: 1, x: 0 } : {}} className="flex items-center gap-3 mb-6">
@@ -644,6 +855,74 @@ function KaizemSistemas() {
   );
 }
 
+// ============ CONTACT 3D SCENE ============
+function ContactScene() {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = t * 0.15;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Multiple interconnected spheres */}
+      {Array.from({ length: 8 }).map((_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        const radius = 2;
+        return (
+          <group key={i}>
+            <mesh position={[Math.cos(angle) * radius, Math.sin(angle) * radius, 0]}>
+              <sphereGeometry args={[0.2, 32, 32]} />
+              <meshStandardMaterial 
+                color={['#a78bfa', '#22d3ee', '#f97316', '#ec4899'][i % 4]}
+                metalness={0.9}
+                roughness={0.1}
+                emissive={['#a78bfa', '#22d3ee', '#f97316', '#ec4899'][i % 4]}
+                emissiveIntensity={0.5}
+              />
+            </mesh>
+            {/* Connection lines to center */}
+            <mesh position={[Math.cos(angle) * radius / 2, Math.sin(angle) * radius / 2, 0]}>
+              <cylinderGeometry args={[0.005, 0.005, radius, 8]} />
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.2} />
+            </mesh>
+          </group>
+        );
+      })}
+      
+      {/* Central core */}
+      <mesh>
+        <dodecahedronGeometry args={[0.5, 0]} />
+        <meshStandardMaterial 
+          color="#ffffff"
+          metalness={1}
+          roughness={0}
+          emissive="#a78bfa"
+          emissiveIntensity={0.8}
+          wireframe
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function ContactScene3D() {
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      <Canvas camera={{ position: [0, 0, 5], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.4} />
+        <pointLight position={[5, 5, 5]} intensity={1} color="#a78bfa" />
+        <pointLight position={[-5, -5, 5]} intensity={0.6} color="#22d3ee" />
+        <ContactScene />
+        <Environment preset="night" />
+      </Canvas>
+    </div>
+  );
+}
+
 // ============ CONTACT ============
 function Contact() {
   const ref = useRef(null);
@@ -653,6 +932,15 @@ function Contact() {
     <section id="contato" ref={ref} className="relative py-32 md:py-48 overflow-hidden">
       <div className="absolute inset-0 bg-[#050507]" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      
+      {/* 3D Scene Background */}
+      <div className="absolute inset-0 z-0 opacity-25">
+        <Suspense fallback={null}>
+          <ContactScene3D />
+        </Suspense>
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-b from-[#050507] via-transparent to-[#050507] z-[1] pointer-events-none" />
+      
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 md:px-10">
         <div className="grid lg:grid-cols-12 gap-16">
           <div className="lg:col-span-7">
@@ -715,6 +1003,127 @@ function Footer() {
   );
 }
 
+// ============ NFC 3D SCENE ============
+function NFCScene() {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = t * 0.2;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Central NFC tag */}
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[1.5, 1.5, 0.1]} />
+        <meshStandardMaterial color="#f97316" metalness={0.8} roughness={0.2} emissive="#f97316" emissiveIntensity={0.3} />
+      </mesh>
+      
+      {/* Signal rings */}
+      {[1.5, 2, 2.5].map((radius, i) => (
+        <mesh key={i} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[radius, 0.02, 16, 100]} />
+          <meshBasicMaterial color="#22d3ee" transparent opacity={0.6 - i * 0.15} />
+        </mesh>
+      ))}
+      
+      {/* Floating data points */}
+      {Array.from({ length: 20 }).map((_, i) => {
+        const angle = (i / 20) * Math.PI * 2;
+        const radius = 2 + Math.random();
+        return (
+          <mesh key={i} position={[Math.cos(angle) * radius, Math.sin(angle) * radius, Math.random() - 0.5]}>
+            <sphereGeometry args={[0.05, 16, 16]} />
+            <meshBasicMaterial color="#a78bfa" />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function NFCScene3D() {
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      <Canvas camera={{ position: [0, 0, 5], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.5} />
+        <pointLight position={[5, 5, 5]} intensity={1} color="#f97316" />
+        <pointLight position={[-5, -5, 5]} intensity={0.5} color="#22d3ee" />
+        <NFCScene />
+        <Environment preset="night" />
+      </Canvas>
+    </div>
+  );
+}
+
+// ============ SISTEMAS 3D SCENE ============
+function SistemasScene() {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (groupRef.current) {
+      groupRef.current.rotation.y = t * 0.1;
+      groupRef.current.rotation.x = Math.sin(t * 0.2) * 0.1;
+    }
+  });
+
+  const modules = [
+    { color: '#a78bfa', pos: [0, 1.5, 0] as [number, number, number] },
+    { color: '#22d3ee', pos: [1.3, 0.75, 0] as [number, number, number] },
+    { color: '#f97316', pos: [1.3, -0.75, 0] as [number, number, number] },
+    { color: '#ec4899', pos: [0, -1.5, 0] as [number, number, number] },
+    { color: '#10b981', pos: [-1.3, -0.75, 0] as [number, number, number] },
+    { color: '#f59e0b', pos: [-1.3, 0.75, 0] as [number, number, number] },
+  ];
+
+  return (
+    <group ref={groupRef}>
+      {/* Central core */}
+      <mesh>
+        <icosahedronGeometry args={[0.8, 2]} />
+        <meshStandardMaterial color="#a78bfa" metalness={0.9} roughness={0.1} emissive="#a78bfa" emissiveIntensity={0.4} wireframe />
+      </mesh>
+      
+      {/* Orbiting modules */}
+      {modules.map((mod, i) => (
+        <mesh key={i} position={mod.pos}>
+          <octahedronGeometry args={[0.3, 0]} />
+          <meshStandardMaterial color={mod.color} metalness={0.7} roughness={0.3} emissive={mod.color} emissiveIntensity={0.3} />
+        </mesh>
+      ))}
+      
+      {/* Connection lines */}
+      {modules.map((mod, i) => (
+        <mesh key={`line-${i}`}>
+          <cylinderGeometry args={[0.01, 0.01, 1.5, 8]} />
+          <meshBasicMaterial color={mod.color} transparent opacity={0.3} />
+          <group position={[mod.pos[0] / 2, mod.pos[1] / 2, mod.pos[2] / 2]}>
+            <primitive object={new THREE.Object3D()} lookAt={new THREE.Vector3(...mod.pos)} />
+          </group>
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function SistemasScene3D() {
+  return (
+    <div className="absolute inset-0 w-full h-full">
+      <Canvas camera={{ position: [0, 0, 5], fov: 50 }} dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
+        <ambientLight intensity={0.4} />
+        <pointLight position={[5, 5, 5]} intensity={0.8} color="#a78bfa" />
+        <pointLight position={[-5, -5, 5]} intensity={0.5} color="#22d3ee" />
+        <SistemasScene />
+        <Environment preset="night" />
+      </Canvas>
+    </div>
+  );
+}
+
 // ============ DIGITAL TOQUE ============
 function DigitalToque() {
   const ref = useRef(null);
@@ -745,6 +1154,15 @@ function DigitalToque() {
     <section id="digital-toque" ref={ref} className="relative py-32 md:py-48 overflow-hidden">
       <div className="absolute inset-0 bg-[#050507]" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      
+      {/* 3D Scene Background */}
+      <div className="absolute inset-0 z-0 opacity-40">
+        <Suspense fallback={null}>
+          <NFCScene3D />
+        </Suspense>
+      </div>
+      <div className="absolute inset-0 bg-gradient-to-b from-[#050507] via-transparent to-[#050507] z-[1] pointer-events-none" />
+      
       <div className="relative z-10 max-w-[1600px] mx-auto px-6 md:px-10">
         <div className="mb-20">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={isInView ? { opacity: 1, x: 0 } : {}} className="flex items-center gap-3 mb-6">
